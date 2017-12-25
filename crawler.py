@@ -1,26 +1,24 @@
 from os.path import join
 import datetime
+import _pickle
 import requests as rq
 from bs4 import BeautifulSoup as soup, element
 
-
-base_url = "http://www.j-archive.com"
-all_seasons_php = "listseasons.php"
 
 ## Utility Functions ##
 def printt(msg):
    time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
    print("{}| {}".format(time_str, msg))
 
-
-## Data we will be collecting ##
-contestants = {}
+    
+base_url = "http://www.j-archive.com"
 
 
 ## Crawling ##
-def process_contestant(cont):
+def process_contestant(cont, contestants):
     link = cont.find("a")
     name = link.text
+    printt("\t\tProcessing Contestant: {}".format(name))
     if name not in contestants:
         # get player stats page
         desc = ",".join(cont.text.split(",")[1:])
@@ -40,8 +38,7 @@ def process_contestant(cont):
         contestants[name] = {"id":pid, "desc":desc, "games":games}
      
 
-def process_episode(episode_link):
-    print(episode_link.text)
+def process_episode(episode_link, contestants):
     episode, _, airdate = episode_link.text.split()
     printt("\tProcessing Episode {}".format(episode))
     php = episode_link.get("href")
@@ -49,27 +46,32 @@ def process_episode(episode_link):
     # Get contestants
     conts = sup.find_all(class_="contestants")
     for cont in conts:
-        process_contestant(cont)
+        process_contestant(cont, contestants)
 
 
 
 def process_season(season_link):
+    contestants = {}
     season = season_link.text
     printt("Processing {}".format(season))
     php = season_link.get("href")
     sup = soup(rq.get(join(base_url, php)).text, "lxml")
     # Get all episodes
-    episode_links = [a for a in sup.find_all("a") if "game_id" in a.get("href")]
+    episode_links = [a for a in sup.find_all("a") 
+        if "game_id" in a.get("href") and "aired" in a.text]
     for episode_link in episode_links:
-        process_episode(episode_link)
+        process_episode(episode_link, contestants)
+    with open("{}_contestants.cpkl".format(season.replace(" ", "_")), "wb") as f:
+        _pickle.dump(contestants, f)
+    contestants = {}
 
 
 ## format and store data ##
 
 
 def main():
-    text = rq.get(join(base_url, all_seasons_php)).text
-
+    # starting page
+    text = rq.get(join(base_url, "listseasons.php")).text
     sup = soup(text, "lxml")
 
     # get all season links:
